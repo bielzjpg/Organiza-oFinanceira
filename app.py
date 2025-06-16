@@ -19,8 +19,8 @@ credentials = service_account.Credentials.from_service_account_info(
 cliente = gspread.authorize(credentials)
 
 # ID da planilha e aba que você quer acessar
-ID_PLANILHA = "COLE_AQUI_O_ID_DA_SUA_PLANILHA"
-NOME_ABA = "Página1"
+ID_PLANILHA = "d/1bs20JYhAupfx-tZlhw0Mr86-ThxSg--_smfYJw_3ICg"
+NOME_ABA = "Dados"
 
 @st.cache_data(ttl=300)
 def carregar_planilha():
