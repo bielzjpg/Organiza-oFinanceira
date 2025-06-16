@@ -1,83 +1,70 @@
 import streamlit as st
-import json
-from google.oauth2 import service_account
+import pandas as pd
 import gspread
-from datetime import datetime
+from google.oauth2 import service_account
 
-# Configurações iniciais do app
-st.set_page_config(page_title="Organização Financeira", layout="centered")
+# Carregar JSON da chave do Secrets do Streamlit
+json_creds = st.secrets["gcp_service_account"]
 
-st.title("📊 Organização Financeira")
+# Definir escopo para acessar Google Sheets
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
-# Carregar credenciais do Google Sheets via secrets
-json_str = st.secrets["google_credentials"]
-credentials_info = json.loads(json_str)
-credentials = service_account.Credentials.from_service_account_info(credentials_info)
+# Criar credenciais com escopo correto
+credentials = service_account.Credentials.from_service_account_info(
+    json_creds,
+    scopes=SCOPES
+)
 
-# Autenticar e acessar Google Sheets
-client = gspread.authorize(credentials)
+# Autenticar cliente gspread
+cliente = gspread.authorize(credentials)
 
-# ID da planilha e nome da aba
-SPREADSHEET_ID = "1bs20JYhAupfx-tZlhw0Mr86-ThxSg--_smfYJw_3ICg"
-WORKSHEET_NAME = "Dados"
+# ID da planilha e aba que você quer acessar
+ID_PLANILHA = "COLE_AQUI_O_ID_DA_SUA_PLANILHA"
+NOME_ABA = "Página1"
 
-# Função para carregar dados da planilha
 @st.cache_data(ttl=300)
-def carregar_dados():
+def carregar_planilha():
     try:
-        planilha = client.open_by_key(SPREADSHEET_ID)
-        aba = planilha.worksheet(WORKSHEET_NAME)
+        planilha = cliente.open_by_key(ID_PLANILHA)
+        aba = planilha.worksheet(NOME_ABA)
         dados = aba.get_all_records()
-        return dados
+        df = pd.DataFrame(dados)
+        return df
     except Exception as e:
         st.error(f"Erro ao carregar dados da planilha: {e}")
-        return []
+        return pd.DataFrame()
 
-# Função para adicionar nova receita/despesa
-def adicionar_lancamento(tipo, valor, descricao):
-    try:
-        planilha = client.open_by_key(SPREADSHEET_ID)
-        aba = planilha.worksheet(WORKSHEET_NAME)
-        data_hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        nova_linha = [data_hora, tipo, descricao, valor]
-        aba.append_row(nova_linha)
-        st.success(f"{tipo.capitalize()} adicionada com sucesso!")
-    except Exception as e:
-        st.error(f"Erro ao adicionar lançamento: {e}")
+def main():
+    st.title("App Organização Financeira - Google Sheets")
 
-# Interface do app
-dados = carregar_dados()
+    df = carregar_planilha()
 
-if dados:
-    df = st.experimental_data_editor(dados, num_rows="dynamic")
-else:
-    st.info("Nenhum dado encontrado na planilha.")
+    if df.empty:
+        st.write("Nenhum dado carregado.")
+    else:
+        st.write("Dados carregados da planilha:")
+        st.dataframe(df)
 
-st.write("---")
+    # Exemplo simples para adicionar uma receita
+    with st.form("nova_receita"):
+        descricao = st.text_input("Descrição")
+        valor = st.number_input("Valor", min_value=0.0, step=0.01)
+        submitted = st.form_submit_button("Adicionar Receita")
 
-st.subheader("Adicionar Receita / Despesa")
+        if submitted:
+            if descricao and valor > 0:
+                # Adiciona na planilha
+                try:
+                    planilha = cliente.open_by_key(ID_PLANILHA)
+                    aba = planilha.worksheet(NOME_ABA)
+                    nova_linha = [descricao, valor]
+                    aba.append_row(nova_linha)
+                    st.success("Receita adicionada com sucesso!")
+                    st.experimental_rerun()  # Recarrega o app para atualizar os dados
+                except Exception as e:
+                    st.error(f"Erro ao adicionar receita: {e}")
+            else:
+                st.warning("Preencha todos os campos corretamente.")
 
-with st.form("form_lancamento"):
-    tipo = st.selectbox("Tipo", ["receita", "despesa"])
-    descricao = st.text_input("Descrição")
-    valor = st.number_input("Valor", min_value=0.01, format="%.2f")
-    enviar = st.form_submit_button("Adicionar")
-
-    if enviar:
-        if descricao.strip() == "":
-            st.warning("Por favor, informe a descrição.")
-        else:
-            adicionar_lancamento(tipo, valor, descricao)
-
-# Exibir resumo simples
-if dados:
-    total_receitas = sum(item["valor"] for item in dados if item["tipo"] == "receita")
-    total_despesas = sum(item["valor"] for item in dados if item["tipo"] == "despesa")
-    saldo = total_receitas - total_despesas
-
-    st.write("---")
-    st.subheader("Resumo Financeiro")
-    st.metric("Total Receitas", f"R$ {total_receitas:.2f}")
-    st.metric("Total Despesas", f"R$ {total_despesas:.2f}")
-    st.metric("Saldo", f"R$ {saldo:.2f}")
-
+if __name__ == "__main__":
+    main()
