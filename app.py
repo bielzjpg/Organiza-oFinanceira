@@ -1,64 +1,83 @@
 import streamlit as st
-import pandas as pd
-from google.oauth2.service_account import Credentials
+import json
+from google.oauth2 import service_account
 import gspread
+from datetime import datetime
 
-# --- Função para autenticar no Google Sheets usando o secret ---
-def autenticar_google_sheets():
-    # Pega o JSON da conta de serviço do secret
-    cred_json = st.secrets["google_credentials"]
-    
-    # Cria um arquivo temporário com o conteúdo do JSON
-    with open("credenciais.json", "w") as f:
-        f.write(cred_json)
-    
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    creds = Credentials.from_service_account_file("credenciais.json", scopes=scopes)
-    client = gspread.authorize(creds)
-    return client
+# Configurações iniciais do app
+st.set_page_config(page_title="Organização Financeira", layout="centered")
 
-# --- Função para carregar dados da planilha ---
-def carregar_planilha(client, spreadsheet_id, nome_aba):
-    planilha = client.open_by_key(spreadsheet_id)
-    aba = planilha.worksheet(nome_aba)
-    dados = aba.get_all_records()
-    df = pd.DataFrame(dados)
-    return df, aba
+st.title("📊 Organização Financeira")
 
-# --- Função para salvar dados na planilha ---
-def salvar_planilha(aba, df):
-    # Limpa a aba antes de salvar
-    aba.clear()
-    # Atualiza a planilha com os dados do dataframe
-    aba.update([df.columns.values.tolist()] + df.values.tolist())
+# Carregar credenciais do Google Sheets via secrets
+json_str = st.secrets["google_credentials"]
+credentials_info = json.loads(json_str)
+credentials = service_account.Credentials.from_service_account_info(credentials_info)
 
-# --- Configurações principais ---
+# Autenticar e acessar Google Sheets
+client = gspread.authorize(credentials)
+
+# ID da planilha e nome da aba
 SPREADSHEET_ID = "1bs20JYhAupfx-tZlhw0Mr86-ThxSg--_smfYJw_3ICg"
-NOME_ABA = "Dados"
+WORKSHEET_NAME = "Dados"
 
-st.title("App de Organização Financeira com Google Sheets")
+# Função para carregar dados da planilha
+@st.cache_data(ttl=300)
+def carregar_dados():
+    try:
+        planilha = client.open_by_key(SPREADSHEET_ID)
+        aba = planilha.worksheet(WORKSHEET_NAME)
+        dados = aba.get_all_records()
+        return dados
+    except Exception as e:
+        st.error(f"Erro ao carregar dados da planilha: {e}")
+        return []
 
-# Autentica e carrega dados
-client = autenticar_google_sheets()
-df, aba = carregar_planilha(client, SPREADSHEET_ID, NOME_ABA)
+# Função para adicionar nova receita/despesa
+def adicionar_lancamento(tipo, valor, descricao):
+    try:
+        planilha = client.open_by_key(SPREADSHEET_ID)
+        aba = planilha.worksheet(WORKSHEET_NAME)
+        data_hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        nova_linha = [data_hora, tipo, descricao, valor]
+        aba.append_row(nova_linha)
+        st.success(f"{tipo.capitalize()} adicionada com sucesso!")
+    except Exception as e:
+        st.error(f"Erro ao adicionar lançamento: {e}")
 
-st.subheader("Dados atuais")
-st.dataframe(df)
+# Interface do app
+dados = carregar_dados()
 
-# Formulário para adicionar uma nova linha
-st.subheader("Adicionar nova entrada")
+if dados:
+    df = st.experimental_data_editor(dados, num_rows="dynamic")
+else:
+    st.info("Nenhum dado encontrado na planilha.")
 
-with st.form("form_novo"):
+st.write("---")
+
+st.subheader("Adicionar Receita / Despesa")
+
+with st.form("form_lancamento"):
+    tipo = st.selectbox("Tipo", ["receita", "despesa"])
     descricao = st.text_input("Descrição")
-    valor = st.number_input("Valor", format="%.2f")
-    tipo = st.selectbox("Tipo", ["Receita", "Despesa"])
-    enviado = st.form_submit_button("Adicionar")
+    valor = st.number_input("Valor", min_value=0.01, format="%.2f")
+    enviar = st.form_submit_button("Adicionar")
 
-if enviado:
-    nova_linha = {"Descrição": descricao, "Valor": valor, "Tipo": tipo}
-    df = df.append(nova_linha, ignore_index=True)
-    salvar_planilha(aba, df)
-    st.success("Entrada adicionada com sucesso! Recarregue a página para ver as mudanças.")
+    if enviar:
+        if descricao.strip() == "":
+            st.warning("Por favor, informe a descrição.")
+        else:
+            adicionar_lancamento(tipo, valor, descricao)
+
+# Exibir resumo simples
+if dados:
+    total_receitas = sum(item["valor"] for item in dados if item["tipo"] == "receita")
+    total_despesas = sum(item["valor"] for item in dados if item["tipo"] == "despesa")
+    saldo = total_receitas - total_despesas
+
+    st.write("---")
+    st.subheader("Resumo Financeiro")
+    st.metric("Total Receitas", f"R$ {total_receitas:.2f}")
+    st.metric("Total Despesas", f"R$ {total_despesas:.2f}")
+    st.metric("Saldo", f"R$ {saldo:.2f}")
+
