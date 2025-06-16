@@ -4,9 +4,9 @@ import pandas as pd
 from gsheets_utils import autenticar_google_sheets, carregar_planilha, salvar_planilha
 
 # --- CONFIGURE AQUI ---
-CAMINHO_CREDENCIAIS = "seu-arquivo-credenciais.json"  # coloque o nome do seu arquivo JSON aqui
-ID_PLANILHA = "seu_id_da_planilha_google"  # coloque o ID da sua planilha Google aqui
-NOME_ABA = "Sheet1"  # normalmente é "Sheet1", altere se usar outra aba
+CAMINHO_CREDENCIAIS = "Credentials.json"  # coloque o nome do seu arquivo JSON aqui
+ID_PLANILHA = "1bs20JYhAupfx-tZlhw0Mr86-ThxSg--_smfYJw_3ICg"  # coloque o ID da sua planilha Google aqui
+NOME_ABA = "Receitas"  # normalmente é "Sheet1", altere se usar outra aba
 
 # --- Autenticação ---
 @st.cache_resource(ttl=3600)
